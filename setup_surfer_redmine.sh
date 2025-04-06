@@ -86,8 +86,9 @@ fi
 
 cd ${INSTALL_DIR}
 echo "=== Installing bundler and required gems ==="
+sudo -u www-data bundle config set --local path 'vendor/bundle'
 sudo -u www-data bundle config set --local without 'development test'
-sudo -u www-data bundle install || true
+sudo -u www-data bundle install
 
 echo "=== Running Redmine setup ==="
 [ ! -f config/initializers/secret_token.rb ] && sudo -u www-data bin/rake generate_secret_token
@@ -101,19 +102,19 @@ if [ ! -f "${PASSENGER_GEM_DIR}/buildout/apache2/mod_passenger.so" ]; then
   passenger-install-apache2-module --auto --languages ruby
 fi
 
+
 echo "=== Configuring Apache ==="
 APACHE_CONF="/etc/apache2/conf-available/surfer.conf"
 if [ ! -f "${APACHE_CONF}" ]; then
+  echo "Generating Apache config with dynamic Passenger module path..."
+  SNIPPET=$(passenger-install-apache2-module --snippet)
+
   cat > ${APACHE_CONF} <<EOL
 <Directory "${INSTALL_DIR}/public">
   Require all granted
 </Directory>
 
-LoadModule passenger_module ${PASSENGER_GEM_DIR}/buildout/apache2/mod_passenger.so
-<IfModule mod_passenger.c>
-  PassengerRoot ${PASSENGER_GEM_DIR}
-  PassengerDefaultRuby /usr/local/bin/ruby
-</IfModule>
+\${SNIPPET}
 
 <Directory ${INSTALL_DIR}/public>
     Allow from all
@@ -121,6 +122,7 @@ LoadModule passenger_module ${PASSENGER_GEM_DIR}/buildout/apache2/mod_passenger.
     Require all granted
 </Directory>
 EOL
+
   a2enconf surfer
   sed -i "s|DocumentRoot /var/www/html|DocumentRoot ${INSTALL_DIR}/public|g" /etc/apache2/sites-enabled/000-default.conf
   apache2ctl configtest
